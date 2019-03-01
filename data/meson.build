@@ -10,6 +10,24 @@ if get_option('daemon')
   subdir('installed-tests')
 endif
 
+if get_option('agent')
+  install_data(['agent.conf'],
+    install_dir : join_paths(sysconfdir, 'fwupd')
+  )
+  install_data(['fwupdagent.timer'],
+    install_dir : systemdunitdir
+  )
+  con2 = configuration_data()
+  con2.set('libexecdir', libexecdir)
+  configure_file(
+    input : 'fwupdagent.service',
+    output : 'fwupdagent.service',
+    configuration : con2,
+    install: true,
+    install_dir : systemdunitdir,
+  )
+endif
+
 install_data(['daemon.conf'],
   install_dir : join_paths(sysconfdir, 'fwupd')
 )
