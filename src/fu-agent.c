@@ -18,6 +18,7 @@
 #include "fu-common.h"
 #include "fu-util-common.h"
 #include "fwupd-device-private.h"
+#include "fwupd-enums-private.h"
 
 struct FuUtilPrivate {
 	GCancellable		*cancellable;
@@ -77,14 +78,14 @@ fu_util_agent_run_action (FuUtilPrivate *priv,
 				     "No task specified");
 		return FALSE;
 	}
-	if (!json_object_has_member (json_object, "DeviceId")) {
+	if (!json_object_has_member (json_object, FWUPD_RESULT_KEY_DEVICE_ID)) {
 		g_set_error_literal (error,
 				     FWUPD_ERROR,
 				     FWUPD_ERROR_INTERNAL,
 				     "No DeviceId specified");
 		return FALSE;
 	}
-	if (!json_object_has_member (json_object, "Checksum")) {
+	if (!json_object_has_member (json_object, FWUPD_RESULT_KEY_CHECKSUM)) {
 		g_set_error_literal (error,
 				     FWUPD_ERROR,
 				     FWUPD_ERROR_INTERNAL,
@@ -104,14 +105,14 @@ fu_util_agent_run_action (FuUtilPrivate *priv,
 	}
 
 	/* find device */
-	device_id = json_object_get_string_member (json_object, "DeviceId");
+	device_id = json_object_get_string_member (json_object, FWUPD_RESULT_KEY_DEVICE_ID);
 	device = fwupd_client_get_device_by_id (priv->client, device_id,
 						priv->cancellable, error);
 	if (device == NULL)
 		return FALSE;
 
 	/* find release for device */
-	checksum = json_object_get_string_member (json_object, "Checksum");
+	checksum = json_object_get_string_member (json_object, FWUPD_RESULT_KEY_CHECKSUM);
 	releases = fwupd_client_get_releases (priv->client, device_id,
 					      priv->cancellable, error);
 	for (guint i = 0; i < releases->len; i++) {
@@ -162,6 +163,13 @@ fu_util_agent_send (FuUtilPrivate *priv,
 	server = g_key_file_get_string (config, "fwupdagent", "Server", error);
 	if (server == NULL)
 		return FALSE;
+	if (server[0] == '\0') {
+		g_set_error_literal (error,
+				     FWUPD_ERROR,
+				     FWUPD_ERROR_INTERNAL,
+				     "Server not set in agent.conf");
+		return FALSE;
+	}
 
 	/* export as a string */
 	json_builder_root = json_builder_get_root (builder);
@@ -556,6 +564,7 @@ main (int argc, char *argv[])
 
 	/* create helper object */
 	priv->loop = g_main_loop_new (NULL, FALSE);
+	priv->client = fwupd_client_new ();
 
 	/* add commands */
 	fu_util_cmd_array_add (cmd_array,
@@ -617,14 +626,6 @@ main (int argc, char *argv[])
 	} else {
 		g_log_set_handler (G_LOG_DOMAIN, G_LOG_LEVEL_DEBUG,
 				   fu_util_ignore_cb, NULL);
-	}
-
-	/* connect to the daemon */
-	priv->client = fwupd_client_new ();
-	if (!fwupd_client_connect (priv->client, priv->cancellable, &error)) {
-		g_printerr ("Failed to connect to daemon: %s\n",
-			    error->message);
-		return EXIT_FAILURE;
 	}
 
 	/* run the specified command */

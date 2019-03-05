@@ -12,3 +12,4 @@ PrivateTmp=yes
 ProtectHome=yes
 ProtectSystem=full
 SystemCallFilter=~@mount
+@dynamic_options@

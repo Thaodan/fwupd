@@ -14,18 +14,6 @@ if get_option('agent')
   install_data(['agent.conf'],
     install_dir : join_paths(sysconfdir, 'fwupd')
   )
-  install_data(['fwupdagent.timer'],
-    install_dir : systemdunitdir
-  )
-  con2 = configuration_data()
-  con2.set('libexecdir', libexecdir)
-  configure_file(
-    input : 'fwupdagent.service',
-    output : 'fwupdagent.service',
-    configuration : con2,
-    install: true,
-    install_dir : systemdunitdir,
-  )
 endif
 
 install_data(['daemon.conf'],
@@ -76,11 +64,14 @@ if get_option('systemd')
   if systemd.version().version_compare('>= 231')
     dynamic_options += 'RestrictRealtime=yes'
     dynamic_options += 'MemoryDenyWriteExecute=yes'
+  endif
+  con2.set('dynamic_options', '\n'.join(dynamic_options))
+  if systemd.version().version_compare('>= 231')
     dynamic_options += ['ReadWritePaths=' + ' '.join(rw_directories)]
   else
     dynamic_options += ['ReadWriteDirectories=' + ' '.join(rw_directories)]
   endif
-  con2.set('dynamic_options', '\n'.join(dynamic_options))
+  con2.set('dynamic_options_daemon', '\n'.join(dynamic_options))
 
   # replace @bindir@
   configure_file(
@@ -108,6 +99,20 @@ if get_option('systemd')
     install: true,
     install_dir: systemd.get_pkgconfig_variable('systemdshutdowndir'),
   )
+
+  if get_option('agent')
+    install_data(['fwupdagent.timer'],
+      install_dir : systemdunitdir
+    )
+    configure_file(
+      input : 'fwupdagent.service',
+      output : 'fwupdagent.service',
+      configuration : con2,
+      install: true,
+      install_dir : systemdunitdir,
+    )
+  endif
+
 endif
 
 if get_option('systemd') or get_option('elogind')
