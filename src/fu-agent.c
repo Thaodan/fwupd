@@ -58,6 +58,84 @@ fu_util_agent_set_server (FuUtilPrivate *priv, const gchar *server, GError **err
 }
 
 static gboolean
+fu_util_agent_run_action (FuUtilPrivate *priv,
+			  JsonObject *json_object,
+			  GError **error)
+{
+	const gchar *checksum;
+	const gchar *device_id;
+	const gchar *task;
+	g_autoptr(FwupdDevice) device = NULL;
+	g_autoptr(FwupdRelease) rel = NULL;
+	g_autoptr(GPtrArray) releases = NULL;
+
+	/* check object for args */
+	if (!json_object_has_member (json_object, "Task")) {
+		g_set_error_literal (error,
+				     FWUPD_ERROR,
+				     FWUPD_ERROR_INTERNAL,
+				     "No task specified");
+		return FALSE;
+	}
+	if (!json_object_has_member (json_object, "DeviceId")) {
+		g_set_error_literal (error,
+				     FWUPD_ERROR,
+				     FWUPD_ERROR_INTERNAL,
+				     "No DeviceId specified");
+		return FALSE;
+	}
+	if (!json_object_has_member (json_object, "Checksum")) {
+		g_set_error_literal (error,
+				     FWUPD_ERROR,
+				     FWUPD_ERROR_INTERNAL,
+				     "No checksum specified");
+		return FALSE;
+	}
+
+	/* check task */
+	task = json_object_get_string_member (json_object, "Task");
+	if (g_strcmp0 (task, "upgrade") != 0) {
+		g_set_error (error,
+			     FWUPD_ERROR,
+			     FWUPD_ERROR_INTERNAL,
+			     "Invalid task '%s', only 'upgrade' supported",
+			     task);
+		return FALSE;
+	}
+
+	/* find device */
+	device_id = json_object_get_string_member (json_object, "DeviceId");
+	device = fwupd_client_get_device_by_id (priv->client, device_id,
+						priv->cancellable, error);
+	if (device == NULL)
+		return FALSE;
+
+	/* find release for device */
+	checksum = json_object_get_string_member (json_object, "Checksum");
+	releases = fwupd_client_get_releases (priv->client, device_id,
+					      priv->cancellable, error);
+	for (guint i = 0; i < releases->len; i++) {
+		FwupdRelease *rel_tmp = g_ptr_array_index (releases, i);
+		if (fwupd_release_has_checksum (rel_tmp, checksum)) {
+			rel = g_object_ref (rel_tmp);
+			break;
+		}
+	}
+	if (rel == NULL) {
+		g_set_error (error,
+			     FWUPD_ERROR,
+			     FWUPD_ERROR_INTERNAL,
+			     "Failed to find a release with a checksum of %s",
+			     checksum);
+		return FALSE;
+	}
+
+	/* FIXME: before I actually add this, is this really a good idea?! */
+	g_debug ("will download and deploy %s", fwupd_release_get_uri (rel));
+	return TRUE;
+}
+
+static gboolean
 fu_util_agent_send (FuUtilPrivate *priv,
 		    const gchar *endpoint,
 		    JsonBuilder *builder,
@@ -191,6 +269,16 @@ fu_util_agent_send (FuUtilPrivate *priv,
 							 priv->cancellable,
 							 error))
 			return FALSE;
+	}
+
+	/* perform action */
+	if (json_object_has_member (json_object, "actions")) {
+		JsonArray *json_array = json_object_get_array_member (json_object, "actions");
+		for (guint i = 0; i < json_array_get_length (json_array); i++) {
+			JsonObject *json_action = json_array_get_object_element (json_array, i);
+			if (!fu_util_agent_run_action (priv, json_action, error))
+				return FALSE;
+		}
 	}
 
 	return TRUE;
